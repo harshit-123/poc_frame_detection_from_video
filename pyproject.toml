@@ -1,0 +1,18 @@
+[project]
+name = "poc-video-frame"
+version = "0.1.0"
+description = "FastAPI service for matching a target person in uploaded videos"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "faiss-cpu",
+    "fastapi",
+    "insightface",
+    "numpy",
+    "opencv-python",
+    "python-multipart",
+    "uvicorn[standard]",
+]
+
+[tool.uv]
+dev-dependencies = []
