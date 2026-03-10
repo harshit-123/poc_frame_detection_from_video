@@ -11,6 +11,8 @@ dependencies = [
     "numpy",
     "opencv-python",
     "python-multipart",
+    "requests",
+    "streamlit==1.49.1",
     "uvicorn[standard]",
 ]
 

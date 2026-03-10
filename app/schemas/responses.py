@@ -5,9 +5,9 @@ class ErrorResponse(BaseModel):
     error: str
 
 
-class UploadUserResponse(BaseModel):
+class UploadVideoResponse(BaseModel):
     message: str
-    user_id: str
+    video_id: str
 
 
 class MatchResult(BaseModel):
@@ -17,5 +17,21 @@ class MatchResult(BaseModel):
     snapshot: str
 
 
-class ProcessVideoResponse(BaseModel):
+class UploadUserResponse(BaseModel):
+    message: str
+    user_id: str
     matches: list[MatchResult]
+
+
+class VideoClipResult(BaseModel):
+    user_id: str
+    timestamp: float
+    similarity: float
+    clip: str
+    duration: float
+
+
+class UploadUserVideoResponse(BaseModel):
+    message: str
+    user_id: str
+    clips: list[VideoClipResult]

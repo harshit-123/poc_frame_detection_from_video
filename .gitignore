@@ -8,3 +8,8 @@ wheels/
 
 # Virtual environments
 .venv
+
+snapshots/
+uploads/
+
+requirements_1.txt
