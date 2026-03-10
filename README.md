@@ -67,7 +67,7 @@ Flow:
   - choose maximum clips to generate
   - generate clips via `/user-photo-upload-video-clip`
 
-If API and Streamlit run on different machines, the returned clip file paths may not be directly playable in the browser. In that case, use shared storage or add a file-serving endpoint.
+The Streamlit app fetches generated clips through the API on the server side before rendering them in the browser. This avoids the common EC2 deployment issue where the browser cannot reach `127.0.0.1:8000` even though Streamlit can.
 Streamlit upload limit is configured to 300 MB in `.streamlit/config.toml`.
 
 Snapshots are written to:

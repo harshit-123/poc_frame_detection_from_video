@@ -42,6 +42,18 @@ def post_file(
     return True, payload
 
 
+def fetch_binary(url: str) -> tuple[bool, bytes | None, str | None]:
+    try:
+        response = requests.get(url, timeout=(10, API_REQUEST_TIMEOUT_SECONDS))
+    except requests.RequestException as exc:
+        return False, None, f"Request failed: {exc}"
+
+    if response.status_code >= 400:
+        return False, None, f"Failed to fetch media (status {response.status_code})"
+
+    return True, response.content, None
+
+
 def render_admin_page(api_base_url: str) -> None:
     st.header("Admin Video Upload")
     st.write("Upload source video first. Users can then upload photos to get matched clips.")
@@ -135,7 +147,12 @@ def render_user_page(api_base_url: str) -> None:
             )
             if clip_path:
                 clip_url = f"{api_base_url.rstrip('/')}/clip-file?path={quote(clip_path)}"
-                st.video(clip_url, format="video/mp4")
+                ok, clip_bytes, error_message = fetch_binary(clip_url)
+                if ok and clip_bytes is not None:
+                    st.video(clip_bytes, format="video/mp4")
+                else:
+                    st.error(error_message or "Failed to load generated clip.")
+                    st.caption(f"Clip URL: `{clip_url}`")
                 st.caption(f"Clip path: `{clip_path}`")
             else:
                 st.info(f"Clip saved on API server: `{clip_path}`")
