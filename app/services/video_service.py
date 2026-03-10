@@ -2,10 +2,13 @@ import os
 import shutil
 import subprocess
 import uuid
+import logging
 
 import cv2
 
 from app.schemas.responses import MatchResult, VideoClipResult
+
+logger = logging.getLogger(__name__)
 
 
 class VideoService:
@@ -52,8 +55,60 @@ class VideoService:
         ]
         result = subprocess.run(command, capture_output=True, check=False)
         if result.returncode != 0 or not os.path.exists(output_path):
+            logger.warning(
+                "ffmpeg transcode failed for %s: %s",
+                source_path,
+                result.stderr.decode("utf-8", errors="ignore").strip(),
+            )
             return source_path
         return output_path
+
+    @staticmethod
+    def _write_video_clip_with_ffmpeg(
+        video_path: str,
+        clip_path: str,
+        start_sec: float,
+        duration_sec: float,
+    ) -> str | None:
+        ffmpeg_path = shutil.which("ffmpeg")
+        if ffmpeg_path is None:
+            return None
+
+        command = [
+            ffmpeg_path,
+            "-y",
+            "-ss",
+            f"{start_sec:.3f}",
+            "-i",
+            video_path,
+            "-t",
+            f"{duration_sec:.3f}",
+            "-an",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "veryfast",
+            "-crf",
+            "23",
+            "-pix_fmt",
+            "yuv420p",
+            "-movflags",
+            "+faststart",
+            clip_path,
+        ]
+        result = subprocess.run(command, capture_output=True, check=False)
+        if result.returncode != 0 or not os.path.exists(clip_path) or os.path.getsize(clip_path) == 0:
+            logger.warning(
+                "ffmpeg clip extraction failed for %s [%ss-%ss]: %s",
+                video_path,
+                f"{start_sec:.3f}",
+                f"{start_sec + duration_sec:.3f}",
+                result.stderr.decode("utf-8", errors="ignore").strip(),
+            )
+            if os.path.exists(clip_path):
+                os.remove(clip_path)
+            return None
+        return clip_path
 
     @staticmethod
     def _person_crop_from_face(frame, face_bbox):
@@ -192,6 +247,17 @@ class VideoService:
         user_clip_dir = os.path.join(self.snapshot_dir, user_id, "clips")
         os.makedirs(user_clip_dir, exist_ok=True)
         clip_path = os.path.join(user_clip_dir, f"{uuid.uuid4()}.mp4")
+
+        duration_sec = max(0.1, end_sec - start_sec)
+        ffmpeg_clip_path = self._write_video_clip_with_ffmpeg(
+            video_path=video_path,
+            clip_path=clip_path,
+            start_sec=start_sec,
+            duration_sec=duration_sec,
+        )
+        if ffmpeg_clip_path is not None:
+            cap.release()
+            return ffmpeg_clip_path
 
         writer = None
         for codec in ("avc1", "H264", "mp4v"):
