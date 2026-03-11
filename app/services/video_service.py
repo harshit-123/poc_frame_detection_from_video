@@ -70,14 +70,22 @@ class VideoService:
         command = [
             ffmpeg_path,
             "-y",
-            "-ss", f"{start_sec:.3f}",
-            "-i", video_path,
-            "-t", f"{duration_sec:.3f}",
-            "-c:v", "libx264",
-            "-pix_fmt", "yuv420p",
-            "-preset", "veryfast",
-            "-crf", "23",
-            "-movflags", "+faststart",
+            "-ss",
+            f"{start_sec:.3f}",
+            "-i",
+            video_path,
+            "-t",
+            f"{duration_sec:.3f}",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "fast",
+            "-crf",
+            "23",
+            "-pix_fmt",
+            "yuv420p",
+            "-movflags",
+            "+faststart",
             "-an",
             clip_path,
         ]
@@ -211,71 +219,27 @@ class VideoService:
         start_sec: float,
         end_sec: float,
     ) -> str | None:
-        cap = cv2.VideoCapture(video_path)
-        fps = cap.get(cv2.CAP_PROP_FPS)
-        if fps <= 0:
-            fps = 1
-
-        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-
-        start_frame = max(0, int(start_sec * fps))
-        end_frame = int(end_sec * fps)
-        if total_frames > 0:
-            end_frame = min(total_frames - 1, end_frame)
-
-        if end_frame <= start_frame or frame_width <= 0 or frame_height <= 0:
-            cap.release()
-            return None
-
         user_clip_dir = os.path.join(self.snapshot_dir, user_id, "clips")
         os.makedirs(user_clip_dir, exist_ok=True)
         clip_path = os.path.join(user_clip_dir, f"{uuid.uuid4()}.mp4")
 
         duration_sec = max(0.1, end_sec - start_sec)
-        ffmpeg_clip_path = self._write_video_clip_with_ffmpeg(
+        clip_result = self._write_video_clip_with_ffmpeg(
             video_path=video_path,
             clip_path=clip_path,
             start_sec=start_sec,
             duration_sec=duration_sec,
         )
-        if ffmpeg_clip_path is not None:
-            cap.release()
-            return ffmpeg_clip_path
-
-        writer = None
-        for codec in ("avc1", "H264", "mp4v"):
-            fourcc = cv2.VideoWriter_fourcc(*codec)
-            candidate = cv2.VideoWriter(clip_path, fourcc, fps, (frame_width, frame_height))
-            if candidate.isOpened():
-                writer = candidate
-                break
-            candidate.release()
-        if writer is None:
-            cap.release()
+        if clip_result is None:
+            logger.warning(
+                "Skipping clip because ffmpeg failed for %s [%ss-%ss]",
+                video_path,
+                f"{start_sec:.3f}",
+                f"{end_sec:.3f}",
+            )
             return None
 
-        cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
-        current_frame = start_frame
-        wrote_frames = 0
-        while current_frame <= end_frame:
-            ret, frame = cap.read()
-            if not ret:
-                break
-            writer.write(frame)
-            wrote_frames += 1
-            current_frame += 1
-
-        writer.release()
-        cap.release()
-
-        if wrote_frames == 0:
-            if os.path.exists(clip_path):
-                os.remove(clip_path)
-            return None
-
-        return self._transcode_clip_for_web(clip_path)
+        return clip_result
 
     def process_video_clips(
         self,
