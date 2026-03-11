@@ -215,18 +215,47 @@ class VideoService:
         start_sec: float,
         end_sec: float,
     ) -> str | None:
+
         user_clip_dir = os.path.join(self.snapshot_dir, user_id, "clips")
         os.makedirs(user_clip_dir, exist_ok=True)
+
         clip_path = os.path.join(user_clip_dir, f"{uuid.uuid4()}.mp4")
 
-        duration_sec = max(0.5, end_sec - start_sec)
+        # Get video duration
+        cap = cv2.VideoCapture(video_path)
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        frame_count = cap.get(cv2.CAP_PROP_FRAME_COUNT)
+        cap.release()
+
+        if fps <= 0:
+            logger.error("Invalid FPS detected for video: %s", video_path)
+            return None
+
+        video_duration = frame_count / fps
+
+        # Clamp start/end within video duration
         start_sec = max(0.01, start_sec)
+        end_sec = min(end_sec, video_duration - 0.1)
+
+        duration_sec = max(0.5, end_sec - start_sec)
+
+        # Skip invalid clips
+        if duration_sec <= 0:
+            logger.warning(
+                "Skipping clip because requested time is outside video duration: %s [%ss-%ss]",
+                video_path,
+                f"{start_sec:.3f}",
+                f"{end_sec:.3f}",
+            )
+            return None
+
         clip_result = self._write_video_clip_with_ffmpeg(
             video_path=video_path,
             clip_path=clip_path,
             start_sec=start_sec,
             duration_sec=duration_sec,
         )
+
         if clip_result is None:
             logger.warning(
                 "Skipping clip because ffmpeg failed for %s [%ss-%ss]",
