@@ -39,6 +39,7 @@ class VideoService:
             ffmpeg_path,
             "-y",
             "-i", source_path,
+            "-r", "30",
             "-c:v", "libx264",
             "-pix_fmt", "yuv420p",
             "-preset", "veryfast",
