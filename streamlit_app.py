@@ -173,13 +173,13 @@ def render_user_page(api_base_url: str) -> None:
 
 
 def main() -> None:
-    st.set_page_config(page_title="Video Match UI", layout="wide")
-    st.title("POC Video Match")
+    st.set_page_config(page_title="Face Match Video Generator", layout="wide")
+    st.title("Face Match Video Generator")
 
     api_base_url = st.sidebar.text_input("API Base URL", value=DEFAULT_API_BASE_URL)
     if "127.0.0.1" in api_base_url or "localhost" in api_base_url:
         st.sidebar.caption(
-            "Use localhost only when FastAPI is reachable from the same EC2 host as Streamlit."
+            "Use your local FastAPI URL for development. Keep `localhost` or `127.0.0.1` only when Streamlit and FastAPI are running on the same machine."
         )
     page = st.sidebar.radio("Page", options=["Admin", "User"], index=0)
 
