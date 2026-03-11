@@ -38,17 +38,12 @@ class VideoService:
         command = [
             ffmpeg_path,
             "-y",
-            "-i",
-            source_path,
-            "-c:v",
-            "libx264",
-            "-pix_fmt",
-            "yuv420p",
-            "-preset",
-            "veryfast",
-            "-movflags",
-            "+faststart",
-            output_path,
+            "-i", source_path,
+            "-c:v", "libx264",
+            "-pix_fmt", "yuv420p",
+            "-preset", "veryfast",
+            "-movflags", "+faststart",
+            output_path
         ]
         result = subprocess.run(command, capture_output=True, check=False)
         if result.returncode != 0 or not os.path.exists(output_path):
