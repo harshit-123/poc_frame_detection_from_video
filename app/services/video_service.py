@@ -12,6 +12,51 @@ logger = logging.getLogger(__name__)
 
 
 class VideoService:
+    @staticmethod
+    def _probe_video_stream(video_path: str) -> dict[str, str] | None:
+        ffprobe_path = shutil.which("ffprobe")
+        if ffprobe_path is None or not os.path.exists(video_path):
+            return None
+
+        command = [
+            ffprobe_path,
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "stream=codec_name,pix_fmt",
+            "-of",
+            "default=noprint_wrappers=1",
+            video_path,
+        ]
+        result = subprocess.run(command, capture_output=True, check=False)
+        if result.returncode != 0:
+            logger.warning(
+                "ffprobe failed for %s: %s",
+                video_path,
+                result.stderr.decode("utf-8", errors="ignore").strip(),
+            )
+            return None
+
+        stream_info: dict[str, str] = {}
+        for line in result.stdout.decode("utf-8", errors="ignore").splitlines():
+            if "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            stream_info[key.strip()] = value.strip()
+        return stream_info or None
+
+    @classmethod
+    def _is_browser_compatible_mp4(cls, video_path: str) -> bool:
+        stream_info = cls._probe_video_stream(video_path)
+        if stream_info is None:
+            return False
+        return (
+            stream_info.get("codec_name") == "h264"
+            and stream_info.get("pix_fmt") == "yuv420p"
+        )
+
     def __init__(
         self,
         face_service,
@@ -33,26 +78,35 @@ class VideoService:
         base, ext = os.path.splitext(source_path)
         if ext.lower() != ".mp4":
             return source_path
-        output_path = f"{base}_web.mp4"
+        output_path = f"{base}_fixed.mp4"
 
         command = [
             ffmpeg_path,
             "-y",
-            "-i", source_path,
-            "-r", "30",
-            "-c:v", "libx264",
-            "-pix_fmt", "yuv420p",
-            "-preset", "veryfast",
-            "-movflags", "+faststart",
-            output_path
+            "-i",
+            source_path,
+            "-c:v",
+            "libx264",
+            "-preset",
+            "fast",
+            "-crf",
+            "23",
+            "-pix_fmt",
+            "yuv420p",
+            "-movflags",
+            "+faststart",
+            output_path,
         ]
         result = subprocess.run(command, capture_output=True, check=False)
-        if result.returncode != 0 or not os.path.exists(output_path):
+        if result.returncode != 0 or not os.path.exists(output_path) or os.path.getsize(output_path) == 0:
             logger.warning(
                 "ffmpeg transcode failed for %s: %s",
                 source_path,
                 result.stderr.decode("utf-8", errors="ignore").strip(),
             )
+            return source_path
+        if not VideoService._is_browser_compatible_mp4(output_path):
+            logger.warning("Transcoded clip is not browser compatible: %s", output_path)
             return source_path
         return output_path
 
@@ -70,14 +124,14 @@ class VideoService:
         command = [
             ffmpeg_path,
             "-y",
-            "-ss", f"{start_sec:.3f}",
-            "-i", video_path,
-            "-t", f"{duration_sec:.3f}",
-            "-c:v", "libx264",
-            "-pix_fmt", "yuv420p",
-            "-preset", "veryfast",
-            "-crf", "23",
-            "-movflags", "+faststart",
+            "-ss",
+            f"{start_sec:.3f}",
+            "-i",
+            video_path,
+            "-t",
+            f"{duration_sec:.3f}",
+            "-c:v",
+            "copy",
             "-an",
             clip_path,
         ]
@@ -232,22 +286,29 @@ class VideoService:
         user_clip_dir = os.path.join(self.snapshot_dir, user_id, "clips")
         os.makedirs(user_clip_dir, exist_ok=True)
         clip_path = os.path.join(user_clip_dir, f"{uuid.uuid4()}.mp4")
+        raw_clip_path = os.path.join(user_clip_dir, f"{uuid.uuid4()}_raw.mp4")
 
         duration_sec = max(0.1, end_sec - start_sec)
         ffmpeg_clip_path = self._write_video_clip_with_ffmpeg(
             video_path=video_path,
-            clip_path=clip_path,
+            clip_path=raw_clip_path,
             start_sec=start_sec,
             duration_sec=duration_sec,
         )
         if ffmpeg_clip_path is not None:
             cap.release()
-            return ffmpeg_clip_path
+            transcoded_path = self._transcode_clip_for_web(ffmpeg_clip_path)
+            if self._is_browser_compatible_mp4(transcoded_path):
+                if transcoded_path != raw_clip_path and os.path.exists(raw_clip_path):
+                    os.remove(raw_clip_path)
+                return transcoded_path
+            if os.path.exists(raw_clip_path):
+                os.remove(raw_clip_path)
 
         writer = None
         for codec in ("avc1", "H264", "mp4v"):
             fourcc = cv2.VideoWriter_fourcc(*codec)
-            candidate = cv2.VideoWriter(clip_path, fourcc, fps, (frame_width, frame_height))
+            candidate = cv2.VideoWriter(raw_clip_path, fourcc, fps, (frame_width, frame_height))
             if candidate.isOpened():
                 writer = candidate
                 break
@@ -271,11 +332,22 @@ class VideoService:
         cap.release()
 
         if wrote_frames == 0:
-            if os.path.exists(clip_path):
-                os.remove(clip_path)
+            if os.path.exists(raw_clip_path):
+                os.remove(raw_clip_path)
             return None
 
-        return self._transcode_clip_for_web(clip_path)
+        transcoded_path = self._transcode_clip_for_web(raw_clip_path)
+        if self._is_browser_compatible_mp4(transcoded_path):
+            if transcoded_path != raw_clip_path and os.path.exists(raw_clip_path):
+                os.remove(raw_clip_path)
+            return transcoded_path
+
+        logger.warning("Generated clip is not browser compatible: %s", transcoded_path)
+        if os.path.exists(raw_clip_path):
+            os.remove(raw_clip_path)
+        if transcoded_path != raw_clip_path and os.path.exists(transcoded_path):
+            os.remove(transcoded_path)
+        return None
 
     def process_video_clips(
         self,
