@@ -105,9 +105,6 @@ class VideoService:
                 result.stderr.decode("utf-8", errors="ignore").strip(),
             )
             return source_path
-        if not VideoService._is_browser_compatible_mp4(output_path):
-            logger.warning("Transcoded clip is not browser compatible: %s", output_path)
-            return source_path
         return output_path
 
     @staticmethod
@@ -155,11 +152,12 @@ class VideoService:
             if os.path.exists(clip_path):
                 os.remove(clip_path)
             return None
-        if not VideoService._is_browser_compatible_mp4(clip_path):
-            logger.warning("ffmpeg generated clip is not browser compatible: %s", clip_path)
-            if os.path.exists(clip_path):
-                os.remove(clip_path)
-            return None
+
+        stream_info = VideoService._probe_video_stream(clip_path)
+        if stream_info is None:
+            logger.warning("ffprobe unavailable or failed for generated clip: %s", clip_path)
+        else:
+            logger.info("Generated clip stream info for %s: %s", clip_path, stream_info)
         return clip_path
 
     @staticmethod
@@ -312,7 +310,7 @@ class VideoService:
             return ffmpeg_clip_path
 
         cap.release()
-        logger.warning("Skipping clip because ffmpeg could not generate a browser-compatible MP4")
+        logger.warning("Skipping clip because ffmpeg could not generate the clip")
         return None
 
     def process_video_clips(
