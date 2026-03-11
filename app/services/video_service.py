@@ -124,14 +124,22 @@ class VideoService:
         command = [
             ffmpeg_path,
             "-y",
-            "-ss",
-            f"{start_sec:.3f}",
             "-i",
             video_path,
+            "-ss",
+            f"{start_sec:.3f}",
             "-t",
             f"{duration_sec:.3f}",
             "-c:v",
-            "copy",
+            "libx264",
+            "-preset",
+            "fast",
+            "-crf",
+            "23",
+            "-pix_fmt",
+            "yuv420p",
+            "-movflags",
+            "+faststart",
             "-an",
             clip_path,
         ]
@@ -144,6 +152,11 @@ class VideoService:
                 f"{start_sec + duration_sec:.3f}",
                 result.stderr.decode("utf-8", errors="ignore").strip(),
             )
+            if os.path.exists(clip_path):
+                os.remove(clip_path)
+            return None
+        if not VideoService._is_browser_compatible_mp4(clip_path):
+            logger.warning("ffmpeg generated clip is not browser compatible: %s", clip_path)
             if os.path.exists(clip_path):
                 os.remove(clip_path)
             return None
@@ -286,67 +299,20 @@ class VideoService:
         user_clip_dir = os.path.join(self.snapshot_dir, user_id, "clips")
         os.makedirs(user_clip_dir, exist_ok=True)
         clip_path = os.path.join(user_clip_dir, f"{uuid.uuid4()}.mp4")
-        raw_clip_path = os.path.join(user_clip_dir, f"{uuid.uuid4()}_raw.mp4")
 
         duration_sec = max(0.1, end_sec - start_sec)
         ffmpeg_clip_path = self._write_video_clip_with_ffmpeg(
             video_path=video_path,
-            clip_path=raw_clip_path,
+            clip_path=clip_path,
             start_sec=start_sec,
             duration_sec=duration_sec,
         )
         if ffmpeg_clip_path is not None:
             cap.release()
-            transcoded_path = self._transcode_clip_for_web(ffmpeg_clip_path)
-            if self._is_browser_compatible_mp4(transcoded_path):
-                if transcoded_path != raw_clip_path and os.path.exists(raw_clip_path):
-                    os.remove(raw_clip_path)
-                return transcoded_path
-            if os.path.exists(raw_clip_path):
-                os.remove(raw_clip_path)
+            return ffmpeg_clip_path
 
-        writer = None
-        for codec in ("avc1", "H264", "mp4v"):
-            fourcc = cv2.VideoWriter_fourcc(*codec)
-            candidate = cv2.VideoWriter(raw_clip_path, fourcc, fps, (frame_width, frame_height))
-            if candidate.isOpened():
-                writer = candidate
-                break
-            candidate.release()
-        if writer is None:
-            cap.release()
-            return None
-
-        cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
-        current_frame = start_frame
-        wrote_frames = 0
-        while current_frame <= end_frame:
-            ret, frame = cap.read()
-            if not ret:
-                break
-            writer.write(frame)
-            wrote_frames += 1
-            current_frame += 1
-
-        writer.release()
         cap.release()
-
-        if wrote_frames == 0:
-            if os.path.exists(raw_clip_path):
-                os.remove(raw_clip_path)
-            return None
-
-        transcoded_path = self._transcode_clip_for_web(raw_clip_path)
-        if self._is_browser_compatible_mp4(transcoded_path):
-            if transcoded_path != raw_clip_path and os.path.exists(raw_clip_path):
-                os.remove(raw_clip_path)
-            return transcoded_path
-
-        logger.warning("Generated clip is not browser compatible: %s", transcoded_path)
-        if os.path.exists(raw_clip_path):
-            os.remove(raw_clip_path)
-        if transcoded_path != raw_clip_path and os.path.exists(transcoded_path):
-            os.remove(transcoded_path)
+        logger.warning("Skipping clip because ffmpeg could not generate a browser-compatible MP4")
         return None
 
     def process_video_clips(
