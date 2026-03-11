@@ -57,44 +57,35 @@ class VideoService:
         return output_path
 
     @staticmethod
-    def _write_video_clip_with_ffmpeg(
-        video_path: str,
-        clip_path: str,
-        start_sec: float,
-        duration_sec: float,
-    ) -> str | None:
+    def _write_video_clip_with_ffmpeg(video_path, clip_path, start_sec, duration_sec):
         ffmpeg_path = shutil.which("ffmpeg")
-        if ffmpeg_path is None:
+        if not ffmpeg_path:
             return None
 
         command = [
             ffmpeg_path,
             "-y",
-            "-ss", f"{start_sec:.3f}",
             "-i", video_path,
+            "-ss", f"{start_sec:.3f}",
             "-t", f"{duration_sec:.3f}",
             "-c:v", "libx264",
             "-preset", "veryfast",
             "-crf", "23",
             "-pix_fmt", "yuv420p",
-            "-profile:v", "baseline",
-            "-level", "3.0",
             "-movflags", "+faststart",
             "-an",
             clip_path,
         ]
-        result = subprocess.run(command, capture_output=True, check=False)
-        if result.returncode != 0 or not os.path.exists(clip_path) or os.path.getsize(clip_path) == 0:
-            logger.warning(
-                "ffmpeg clip extraction failed for %s [%ss-%ss]: %s",
-                video_path,
-                f"{start_sec:.3f}",
-                f"{start_sec + duration_sec:.3f}",
-                result.stderr.decode("utf-8", errors="ignore").strip(),
-            )
-            if os.path.exists(clip_path):
-                os.remove(clip_path)
+
+        result = subprocess.run(command, capture_output=True, text=True)
+
+        if result.returncode != 0:
+            logger.error("FFmpeg failed: %s", result.stderr)
             return None
+
+        if not os.path.exists(clip_path) or os.path.getsize(clip_path) == 0:
+            return None
+
         return clip_path
 
     @staticmethod
