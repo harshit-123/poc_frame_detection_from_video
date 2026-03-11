@@ -12,6 +12,51 @@ logger = logging.getLogger(__name__)
 
 
 class VideoService:
+    @staticmethod
+    def _probe_video_stream(video_path: str) -> dict[str, str] | None:
+        ffprobe_path = shutil.which("ffprobe")
+        if ffprobe_path is None or not os.path.exists(video_path):
+            return None
+
+        command = [
+            ffprobe_path,
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "stream=codec_name,pix_fmt",
+            "-of",
+            "default=noprint_wrappers=1",
+            video_path,
+        ]
+        result = subprocess.run(command, capture_output=True, check=False)
+        if result.returncode != 0:
+            logger.warning(
+                "ffprobe failed for %s: %s",
+                video_path,
+                result.stderr.decode("utf-8", errors="ignore").strip(),
+            )
+            return None
+
+        stream_info: dict[str, str] = {}
+        for line in result.stdout.decode("utf-8", errors="ignore").splitlines():
+            if "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            stream_info[key.strip()] = value.strip()
+        return stream_info or None
+
+    @classmethod
+    def _is_browser_compatible_mp4(cls, video_path: str) -> bool:
+        stream_info = cls._probe_video_stream(video_path)
+        if stream_info is None:
+            return False
+        return (
+            stream_info.get("codec_name") == "h264"
+            and stream_info.get("pix_fmt") == "yuv420p"
+        )
+
     def __init__(
         self,
         face_service,
