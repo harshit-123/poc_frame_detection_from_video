@@ -58,7 +58,8 @@ class VideoService:
 
     @staticmethod
     def _write_video_clip_with_ffmpeg(video_path, clip_path, start_sec, duration_sec):
-        ffmpeg_path = shutil.which("ffmpeg")
+        # ffmpeg_path = shutil.which("ffmpeg")
+        ffmpeg_path = "/usr/bin/ffmpeg"
         if not ffmpeg_path:
             logger.error("FFmpeg not found on system PATH")
             return None
