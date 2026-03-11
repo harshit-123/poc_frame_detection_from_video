@@ -46,12 +46,12 @@ class VideoService:
             "-movflags", "+faststart",
             output_path
         ]
-        result = subprocess.run(command, capture_output=True, check=False)
+        result = subprocess.run(command, capture_output=True, text=True)
         if result.returncode != 0 or not os.path.exists(output_path):
             logger.warning(
-                "ffmpeg transcode failed for %s: %s",
+                "ffmpeg transcode failed for %s:\n%s",
                 source_path,
-                result.stderr.decode("utf-8", errors="ignore").strip(),
+                result.stderr,
             )
             return source_path
         return output_path
@@ -60,6 +60,7 @@ class VideoService:
     def _write_video_clip_with_ffmpeg(video_path, clip_path, start_sec, duration_sec):
         ffmpeg_path = shutil.which("ffmpeg")
         if not ffmpeg_path:
+            logger.error("FFmpeg not found on system PATH")
             return None
 
         command = [
@@ -68,6 +69,10 @@ class VideoService:
             "-i", video_path,
             "-ss", f"{start_sec:.3f}",
             "-t", f"{duration_sec:.3f}",
+            "-fflags", "+genpts",
+            "-avoid_negative_ts", "make_zero",
+            "-reset_timestamps", "1",
+            "-vsync", "cfr",
             "-c:v", "libx264",
             "-preset", "veryfast",
             "-crf", "23",
@@ -80,10 +85,16 @@ class VideoService:
         result = subprocess.run(command, capture_output=True, text=True)
 
         if result.returncode != 0:
-            logger.error("FFmpeg failed: %s", result.stderr)
+            logger.error(
+                "FFmpeg failed for clip [%s-%s]:\n%s",
+                start_sec,
+                start_sec + duration_sec,
+                result.stderr,
+            )
             return None
 
         if not os.path.exists(clip_path) or os.path.getsize(clip_path) == 0:
+            logger.error("FFmpeg produced empty clip: %s", clip_path)
             return None
 
         return clip_path
@@ -208,7 +219,8 @@ class VideoService:
         os.makedirs(user_clip_dir, exist_ok=True)
         clip_path = os.path.join(user_clip_dir, f"{uuid.uuid4()}.mp4")
 
-        duration_sec = max(0.1, end_sec - start_sec)
+        duration_sec = max(0.5, end_sec - start_sec)
+        start_sec = max(0.01, start_sec)
         clip_result = self._write_video_clip_with_ffmpeg(
             video_path=video_path,
             clip_path=clip_path,
