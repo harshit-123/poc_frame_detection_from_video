@@ -49,7 +49,21 @@ def fetch_binary(url: str) -> tuple[bool, bytes | None, str | None]:
         return False, None, f"Request failed: {exc}"
 
     if response.status_code >= 400:
-        return False, None, f"Failed to fetch media (status {response.status_code})"
+        error_message = f"Failed to fetch media (status {response.status_code})"
+        try:
+            payload = response.json()
+        except ValueError:
+            payload = None
+        if isinstance(payload, dict) and payload.get("detail"):
+            error_message = f"{error_message}: {payload['detail']}"
+        return False, None, error_message
+
+    content_type = response.headers.get("content-type", "")
+    if "video/mp4" not in content_type.lower():
+        return False, None, f"Unexpected media type: {content_type or 'missing content-type'}"
+
+    if not response.content:
+        return False, None, "Media response was empty"
 
     return True, response.content, None
 
@@ -163,6 +177,10 @@ def main() -> None:
     st.title("POC Video Match")
 
     api_base_url = st.sidebar.text_input("API Base URL", value=DEFAULT_API_BASE_URL)
+    if "127.0.0.1" in api_base_url or "localhost" in api_base_url:
+        st.sidebar.caption(
+            "Use localhost only when FastAPI is reachable from the same EC2 host as Streamlit."
+        )
     page = st.sidebar.radio("Page", options=["Admin", "User"], index=0)
 
     if page == "Admin":

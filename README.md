@@ -72,3 +72,19 @@ Streamlit upload limit is configured to 300 MB in `.streamlit/config.toml`.
 
 Snapshots are written to:
 - `snapshots/<user_id>/<uuid>.jpg`
+
+## EC2 Video Playback Troubleshooting
+
+If clips generate but Chrome shows a blank player on EC2, check these first:
+
+1. Confirm Streamlit can reach the API from the same host.
+   - If both run on the same EC2 instance, `API_BASE_URL=http://127.0.0.1:8000` is valid.
+   - If they run in different containers/hosts, do not use `127.0.0.1`; use the FastAPI service hostname or private IP.
+2. Confirm generated clips are H.264 + `yuv420p`, which browsers expect for MP4 playback.
+   - `ffprobe -v error -select_streams v:0 -show_entries stream=codec_name,pix_fmt -of default=noprint_wrappers=1 /path/to/clip.mp4`
+   - Expected output is `codec_name=h264` and `pix_fmt=yuv420p`.
+3. Confirm EC2 `ffmpeg` has H.264 encoding support.
+   - `ffmpeg -encoders | grep libx264`
+   - If nothing is returned, install an ffmpeg build that includes `libx264`.
+
+The backend now skips clips that are not browser-compatible instead of returning a broken MP4 file.
