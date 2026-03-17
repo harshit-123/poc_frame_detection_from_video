@@ -13,7 +13,7 @@ class UploadVideoResponse(BaseModel):
 class MatchResult(BaseModel):
     user_id: str
     timestamp: float
-    similarity: float
+    similarity: float   
     snapshot: str
 
 
