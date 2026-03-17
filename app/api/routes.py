@@ -20,6 +20,16 @@ router = APIRouter()
 # In-memory reference to the most recent admin video for matching.
 _latest_admin_video_path: str | None = None
 MAX_VIDEO_UPLOAD_SIZE_BYTES = 300 * 1024 * 1024
+ALLOWED_ADMIN_VIDEO_CONTENT_TYPES = {
+    "video/mp4",
+    "video/quicktime",
+    "video/x-msvideo",
+    "video/x-matroska",
+    "video/mpeg",
+}
+ALLOWED_ADMIN_VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv", ".mpeg", ".mpg"}
+ALLOWED_USER_IMAGE_CONTENT_TYPES = {"image/png", "image/jpeg"}
+ALLOWED_USER_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg"}
 
 
 def _uploaded_file_size(upload_file: UploadFile) -> int:
@@ -27,6 +37,22 @@ def _uploaded_file_size(upload_file: UploadFile) -> int:
     size = upload_file.file.tell()
     upload_file.file.seek(0)
     return size
+
+
+def _file_extension(upload_file: UploadFile) -> str:
+    filename = upload_file.filename or ""
+    return os.path.splitext(filename)[1].lower()
+
+
+def _is_allowed_file(
+    upload_file: UploadFile,
+    *,
+    allowed_content_types: set[str],
+    allowed_extensions: set[str],
+) -> bool:
+    content_type = (upload_file.content_type or "").lower()
+    extension = _file_extension(upload_file)
+    return content_type in allowed_content_types or extension in allowed_extensions
 
 
 @router.get("/clip-file")
@@ -41,9 +67,17 @@ async def get_clip_file(path: str = Query(...)):
 
 
 @router.post("/admin-video-upload", response_model=UploadVideoResponse | ErrorResponse)
-@router.post("/process-video", response_model=UploadVideoResponse | ErrorResponse)
 async def admin_video_upload(file: UploadFile = File(...)):
     global _latest_admin_video_path
+
+    if not _is_allowed_file(
+        file,
+        allowed_content_types=ALLOWED_ADMIN_VIDEO_CONTENT_TYPES,
+        allowed_extensions=ALLOWED_ADMIN_VIDEO_EXTENSIONS,
+    ):
+        return ErrorResponse(
+            error="Invalid file type. Admin upload accepts video files only: mp4, mov, avi, mkv, mpeg."
+        )
 
     if _uploaded_file_size(file) > MAX_VIDEO_UPLOAD_SIZE_BYTES:
         return ErrorResponse(error="Video size exceeds 300 MB limit.")
@@ -64,6 +98,13 @@ async def admin_video_upload(file: UploadFile = File(...)):
 async def user_photo_upload(file: UploadFile = File(...)):
     if _latest_admin_video_path is None:
         return ErrorResponse(error="No admin video found. Upload an admin video first.")
+
+    if not _is_allowed_file(
+        file,
+        allowed_content_types=ALLOWED_USER_IMAGE_CONTENT_TYPES,
+        allowed_extensions=ALLOWED_USER_IMAGE_EXTENSIONS,
+    ):
+        return ErrorResponse(error="Invalid file type. User upload accepts PNG or JPEG images only.")
 
     user_id = str(uuid.uuid4())
     image_path = os.path.join(settings.upload_dir, f"{user_id}.jpg")
@@ -100,6 +141,13 @@ async def user_photo_upload_video_clip(
 ):
     if _latest_admin_video_path is None:
         return ErrorResponse(error="No admin video found. Upload an admin video first.")
+
+    if not _is_allowed_file(
+        file,
+        allowed_content_types=ALLOWED_USER_IMAGE_CONTENT_TYPES,
+        allowed_extensions=ALLOWED_USER_IMAGE_EXTENSIONS,
+    ):
+        return ErrorResponse(error="Invalid file type. User upload accepts PNG or JPEG images only.")
 
     user_id = str(uuid.uuid4())
     image_path = os.path.join(settings.upload_dir, f"{user_id}.jpg")
